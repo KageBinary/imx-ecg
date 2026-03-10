@@ -14,3 +14,6 @@ venv/
 *.pth
 logs/
 runs/
+
+
+data2017/

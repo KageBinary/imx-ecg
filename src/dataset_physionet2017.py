@@ -37,7 +37,7 @@ class PreprocessConfig:
     Keep these centralized so later we can add things like filtering,
     augmentation, resampling, etc.
     """
-    target_len: int = 3000      # small = fast. Later you can use 9000 (30s @ 300Hz).
+    target_len: Optional[int] = 3000  # None keeps the original record length.
     do_zscore: bool = True      # per-record normalization
 
 
@@ -59,12 +59,15 @@ def _clean_signal(x: np.ndarray) -> np.ndarray:
     return np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
 
 
-def _fix_length_center(x: np.ndarray, target_len: int) -> np.ndarray:
+def _fix_length_center(x: np.ndarray, target_len: Optional[int]) -> np.ndarray:
     """
     Make all samples the same length for batching.
     - If longer: center crop
     - If shorter: center pad with zeros
     """
+    if target_len is None:
+        return x
+
     n = int(x.shape[0])
 
     if n == target_len:
@@ -94,7 +97,7 @@ class PhysioNet2017Dataset(Dataset):
     Minimal dataset for Phase 1.
 
     Returns:
-      x: FloatTensor with shape (1, target_len)  (channel-first for Conv1d)
+      x: FloatTensor with shape (1, L) where L is target_len or the original length
       y: LongTensor scalar class index
     """
 

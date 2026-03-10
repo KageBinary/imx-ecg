@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import argparse
 import random
+from collections import Counter
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 
 from dataset_physionet2017 import PhysioNet2017Dataset, PreprocessConfig
 from models_1dcnn import SimpleECG1DCNN
@@ -51,12 +52,41 @@ def accuracy(logits: torch.Tensor, y: torch.Tensor) -> float:
     return float((preds == y).float().mean().item())
 
 
+def compute_class_weights(labels: List[int], num_classes: int) -> torch.Tensor:
+    """
+    Inverse-frequency weights so minority classes contribute useful gradient.
+    Normalized to mean 1.0 to keep the loss scale stable.
+    """
+    counts = torch.bincount(torch.tensor(labels, dtype=torch.long), minlength=num_classes).float()
+    weights = counts.sum() / counts.clamp_min(1.0)
+    weights = weights / weights.mean().clamp_min(1e-6)
+    return weights
+
+
+def make_weighted_sampler(labels: List[int], num_classes: int) -> WeightedRandomSampler:
+    """Oversample minority classes during training."""
+    class_weights = compute_class_weights(labels, num_classes)
+    sample_weights = class_weights[torch.tensor(labels, dtype=torch.long)]
+    return WeightedRandomSampler(
+        weights=sample_weights.double(),
+        num_samples=len(labels),
+        replacement=True,
+    )
+
+
+def summarize_split(name: str, labels: List[int], num_classes: int) -> str:
+    counts = Counter(labels)
+    pieces = [f"class_{class_id}={counts.get(class_id, 0)}" for class_id in range(num_classes)]
+    return f"[{name}] " + " ".join(pieces)
+
+
 def run_one_epoch_train(
     model: nn.Module,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    amp_enabled: bool,
 ) -> Tuple[float, float]:
     """
     One training epoch (one full iteration over the training dataloader).
@@ -68,15 +98,20 @@ def run_one_epoch_train(
     acc_sum = 0.0
     batches = 0
 
-    for x, y in loader:
-        x = x.to(device)
-        y = y.to(device)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
 
-        optimizer.zero_grad()
-        logits = model(x)
-        loss = criterion(logits, y)
-        loss.backward()
-        optimizer.step()
+    for x, y in loader:
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+
+        optimizer.zero_grad(set_to_none=True)
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            logits = model(x)
+            loss = criterion(logits, y)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         loss_sum += float(loss.item())
         acc_sum += accuracy(logits.detach(), y)
@@ -99,12 +134,15 @@ def run_one_epoch_val(
     acc_sum = 0.0
     batches = 0
 
-    for x, y in loader:
-        x = x.to(device)
-        y = y.to(device)
+    amp_enabled = device.type == "cuda"
 
-        logits = model(x)
-        loss = criterion(logits, y)
+    for x, y in loader:
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            logits = model(x)
+            loss = criterion(logits, y)
 
         loss_sum += float(loss.item())
         acc_sum += accuracy(logits, y)
@@ -128,6 +166,12 @@ def main() -> None:
     # Training
     parser.add_argument("--epochs", type=int, default=1, help="Default 1 for Phase 1; increase later.")
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--balance",
+        choices=("none", "weighted_loss", "weighted_sampler"),
+        default="weighted_loss",
+        help="Mitigate class imbalance. weighted_loss is the safest default here.",
+    )
 
     # Repro + performance
     parser.add_argument("--seed", type=int, default=42)
@@ -139,6 +183,8 @@ def main() -> None:
     set_seed(args.seed)
     device = pick_device(force_cpu=bool(args.cpu))
     print(f"[device] {device}")
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
     data_dir = Path(args.data_dir).expanduser().resolve()
 
@@ -157,14 +203,36 @@ def main() -> None:
     val_size = int(len(dataset) * float(args.val_frac))
     train_size = len(dataset) - val_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
+    train_labels = [dataset.labels[idx] for idx in train_ds.indices]
+    val_labels = [dataset.labels[idx] for idx in val_ds.indices]
+    num_classes = 4
+
+    print(summarize_split("train", train_labels, num_classes))
+    print(summarize_split("val", val_labels, num_classes))
+
+    sampler = None
+    shuffle = True
+    class_weights = None
+    if args.balance == "weighted_loss":
+        class_weights = compute_class_weights(train_labels, num_classes).to(device)
+        print(f"[balance] weighted_loss class_weights={class_weights.detach().cpu().tolist()}")
+    elif args.balance == "weighted_sampler":
+        sampler = make_weighted_sampler(train_labels, num_classes)
+        shuffle = False
+        print("[balance] weighted_sampler")
+    else:
+        print("[balance] none")
 
     # DataLoaders (Phase 1 requirement: batching works)
     train_loader = DataLoader(
         train_ds,
         batch_size=int(args.batch_size),
-        shuffle=True,
+        shuffle=shuffle,
+        sampler=sampler,
         num_workers=int(args.num_workers),
         drop_last=False,
+        pin_memory=device.type == "cuda",
+        persistent_workers=int(args.num_workers) > 0,
     )
     val_loader = DataLoader(
         val_ds,
@@ -172,18 +240,28 @@ def main() -> None:
         shuffle=False,
         num_workers=int(args.num_workers),
         drop_last=False,
+        pin_memory=device.type == "cuda",
+        persistent_workers=int(args.num_workers) > 0,
     )
 
     # 1D CNN model (Phase 1 requirement)
     model = SimpleECG1DCNN(num_classes=4).to(device)
 
     # Standard classification setup
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=float(args.lr))
+    amp_enabled = device.type == "cuda"
 
     # Supports multiple epochs later, but for Phase 1 run epochs=1
     for epoch in range(int(args.epochs)):
-        train_loss, train_acc = run_one_epoch_train(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc = run_one_epoch_train(
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            amp_enabled=amp_enabled,
+        )
         val_loss, val_acc = run_one_epoch_val(model, val_loader, criterion, device)
 
         print(
