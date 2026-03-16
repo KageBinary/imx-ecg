@@ -1,0 +1,577 @@
+[
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 64,
+      "head_hidden": 64,
+      "dropout": 0.2,
+      "lr": 0.0029712721228815214,
+      "weight_decay": 0.0010717622652265692,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.12342657342657344,
+    "per_class_recall": [
+      0.0,
+      0.9355,
+      0.0,
+      0.8889
+    ],
+    "total_params": 24644,
+    "epochs_run": 20,
+    "trial": 0,
+    "elapsed_s": 19.7
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32,
+        64
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 64,
+      "freq_hidden": 64,
+      "head_hidden": 64,
+      "dropout": 0.2,
+      "lr": 0.0002919589457615097,
+      "weight_decay": 0.000639817606975077,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.10703332651809445,
+    "per_class_recall": [
+      0.0,
+      0.9032,
+      0.0,
+      0.8889
+    ],
+    "total_params": 31044,
+    "epochs_run": 18,
+    "trial": 1,
+    "elapsed_s": 23.3
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 128,
+      "freq_hidden": 128,
+      "head_hidden": 256,
+      "dropout": 0.3,
+      "lr": 0.004157774327737048,
+      "weight_decay": 1.0459147291942846e-05,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.16748511904761906,
+    "per_class_recall": [
+      0.0,
+      1.0,
+      0.0,
+      0.5556
+    ],
+    "total_params": 155908,
+    "epochs_run": 10,
+    "trial": 2,
+    "elapsed_s": 24.02
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32
+      ],
+      "time_kernels_single": 5,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 64,
+      "head_hidden": 64,
+      "dropout": 0.3,
+      "lr": 0.0001601107725494149,
+      "weight_decay": 0.00013796912242820193,
+      "batch_size": 32
+    },
+    "best_macro_f1": 0.014516129032258063,
+    "per_class_recall": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "total_params": 25700,
+    "epochs_run": 6,
+    "trial": 3,
+    "elapsed_s": 7.06
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64
+      ],
+      "time_kernels_single": 5,
+      "pool_stride": 2,
+      "fft_bins": 64,
+      "freq_hidden": 256,
+      "head_hidden": 128,
+      "dropout": 0.1,
+      "lr": 0.008835508071522771,
+      "weight_decay": 0.00013664795341609048,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.1154398762157383,
+    "per_class_recall": [
+      0.0,
+      0.9355,
+      0.0,
+      0.4444
+    ],
+    "total_params": 68932,
+    "epochs_run": 8,
+    "trial": 4,
+    "elapsed_s": 10.64
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 128,
+      "freq_hidden": 256,
+      "head_hidden": 64,
+      "dropout": 0.1,
+      "lr": 0.002101486658246117,
+      "weight_decay": 0.0020854751648753888,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.28067559084508237,
+    "per_class_recall": [
+      0.0,
+      0.5806,
+      0.619,
+      0.8889
+    ],
+    "total_params": 134020,
+    "epochs_run": 20,
+    "trial": 5,
+    "elapsed_s": 36.0
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 512,
+      "freq_hidden": 128,
+      "head_hidden": 128,
+      "dropout": 0.3,
+      "lr": 0.0002114989396164808,
+      "weight_decay": 0.0001163622474373039,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.060403264854395795,
+    "per_class_recall": [
+      0.0,
+      0.4516,
+      0.0,
+      0.7778
+    ],
+    "total_params": 97412,
+    "epochs_run": 13,
+    "trial": 6,
+    "elapsed_s": 16.82
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 128,
+      "freq_hidden": 256,
+      "head_hidden": 256,
+      "dropout": 0.2,
+      "lr": 0.0002122291269574163,
+      "weight_decay": 0.0001375201461644945,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.11827956989247312,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.8889
+    ],
+    "total_params": 208708,
+    "epochs_run": 12,
+    "trial": 7,
+    "elapsed_s": 15.88
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 64,
+      "head_hidden": 64,
+      "dropout": 0.1,
+      "lr": 0.004074662116555783,
+      "weight_decay": 0.0001597696784232247,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.1457232505405263,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0119,
+      0.8889
+    ],
+    "total_params": 26756,
+    "epochs_run": 20,
+    "trial": 8,
+    "elapsed_s": 22.29
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 128,
+      "freq_hidden": 256,
+      "head_hidden": 128,
+      "dropout": 0.5,
+      "lr": 0.005879850822884173,
+      "weight_decay": 0.0008483120002731506,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.14540531931836279,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.8889
+    ],
+    "total_params": 155396,
+    "epochs_run": 20,
+    "trial": 9,
+    "elapsed_s": 32.84
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 256,
+      "head_hidden": 256,
+      "dropout": 0.5,
+      "lr": 0.0062466297785083984,
+      "weight_decay": 0.00015783434612905018,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.10819397993311038,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.7778
+    ],
+    "total_params": 198404,
+    "epochs_run": 7,
+    "trial": 10,
+    "elapsed_s": 11.89
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 64,
+      "freq_hidden": 64,
+      "head_hidden": 64,
+      "dropout": 0.2,
+      "lr": 0.0017984239743712852,
+      "weight_decay": 0.0023781436980696096,
+      "batch_size": 32
+    },
+    "best_macro_f1": 0.12882619110992813,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.8889
+    ],
+    "total_params": 89348,
+    "epochs_run": 9,
+    "trial": 11,
+    "elapsed_s": 17.62
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        64,
+        128,
+        256
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 512,
+      "freq_hidden": 256,
+      "head_hidden": 128,
+      "dropout": 0.3,
+      "lr": 0.008752996508425261,
+      "weight_decay": 0.003822426178077091,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.17452076677316294,
+    "per_class_recall": [
+      0.0,
+      1.0,
+      0.0,
+      0.7778
+    ],
+    "total_params": 321924,
+    "epochs_run": 11,
+    "trial": 12,
+    "elapsed_s": 35.68
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 256,
+      "head_hidden": 128,
+      "dropout": 0.1,
+      "lr": 0.0003863672059546608,
+      "weight_decay": 2.9817639725421937e-05,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.12845345345345346,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.7778
+    ],
+    "total_params": 107140,
+    "epochs_run": 15,
+    "trial": 13,
+    "elapsed_s": 17.94
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        16,
+        32
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 128,
+      "freq_hidden": 256,
+      "head_hidden": 64,
+      "dropout": 0.3,
+      "lr": 0.004823238043027996,
+      "weight_decay": 0.0003334176958751924,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.14335882628375213,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.8889
+    ],
+    "total_params": 55620,
+    "epochs_run": 20,
+    "trial": 14,
+    "elapsed_s": 22.01
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 5,
+      "pool_stride": 2,
+      "fft_bins": 64,
+      "freq_hidden": 256,
+      "head_hidden": 128,
+      "dropout": 0.5,
+      "lr": 0.00010938392040530843,
+      "weight_decay": 0.006127676773502512,
+      "batch_size": 32
+    },
+    "best_macro_f1": 0.11484657039711191,
+    "per_class_recall": [
+      0.0,
+      0.9355,
+      0.0,
+      0.8889
+    ],
+    "total_params": 118468,
+    "epochs_run": 17,
+    "trial": 15,
+    "elapsed_s": 29.39
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 64,
+      "freq_hidden": 64,
+      "head_hidden": 256,
+      "dropout": 0.5,
+      "lr": 0.004285944143830873,
+      "weight_decay": 0.008589215141599207,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.11830357142857144,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.3333
+    ],
+    "total_params": 86084,
+    "epochs_run": 7,
+    "trial": 16,
+    "elapsed_s": 11.65
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 512,
+      "freq_hidden": 256,
+      "head_hidden": 64,
+      "dropout": 0.3,
+      "lr": 0.001135919551843244,
+      "weight_decay": 0.0006603615107888299,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.1396103896103896,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0,
+      0.6667
+    ],
+    "total_params": 158660,
+    "epochs_run": 20,
+    "trial": 17,
+    "elapsed_s": 27.02
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        64,
+        128,
+        256
+      ],
+      "time_kernels_single": 7,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 128,
+      "head_hidden": 256,
+      "dropout": 0.3,
+      "lr": 0.0007519693994566943,
+      "weight_decay": 0.00035704875503528457,
+      "batch_size": 16
+    },
+    "best_macro_f1": 0.16440057118023219,
+    "per_class_recall": [
+      0.0,
+      0.9677,
+      0.0238,
+      0.8889
+    ],
+    "total_params": 420996,
+    "epochs_run": 20,
+    "trial": 18,
+    "elapsed_s": 70.24
+  },
+  {
+    "cfg": {
+      "time_channels": [
+        32,
+        64,
+        128
+      ],
+      "time_kernels_single": 3,
+      "pool_stride": 2,
+      "fft_bins": 256,
+      "freq_hidden": 64,
+      "head_hidden": 256,
+      "dropout": 0.2,
+      "lr": 0.0015027274817466772,
+      "weight_decay": 1.050926920272943e-05,
+      "batch_size": 64
+    },
+    "best_macro_f1": 0.16568521883482512,
+    "per_class_recall": [
+      0.0,
+      0.871,
+      0.1071,
+      0.8889
+    ],
+    "total_params": 98372,
+    "epochs_run": 20,
+    "trial": 19,
+    "elapsed_s": 31.49
+  }
+]

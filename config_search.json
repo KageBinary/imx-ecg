@@ -1,0 +1,11 @@
+{
+  "data_dir": "data2017",
+  "trials": 20,
+  "trial_epochs": 40,
+  "trial_patience": 5,
+  "subset": 1500,
+  "val_frac": 0.2,
+  "seed": 42,
+  "num_workers": 0,
+  "results_path": "search_results.json"
+}

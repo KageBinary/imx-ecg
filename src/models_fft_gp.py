@@ -1,12 +1,17 @@
 """
 Variable-length ECG classifier with time-domain and FFT branches.
 
-- Time branch: Conv/ReLU/Pool stack + masked global average pooling
-- Frequency branch: per-sample FFT magnitude + compact spectral encoder
+- Time branch: configurable Conv/BN/ReLU/Pool stack + masked global average pooling
+- Frequency branch: batched FFT magnitude pooled to fixed bins, linear projection only
 - Fusion head: concatenates both views before classification
+
+Architecture is fully parameterized so CLI flags and hyperparameter search can
+control depth, width, and regularization without touching this file.
 """
 
 from __future__ import annotations
+
+from typing import Sequence
 
 import torch
 import torch.nn as nn
@@ -23,56 +28,84 @@ def masked_global_avg_pool_1d(x: torch.Tensor, lengths: torch.Tensor) -> torch.T
 
 
 class ECGFFTGlobalPoolNet(nn.Module):
-    def __init__(self, num_classes: int = 4, fft_bins: int = 256):
+    """
+    Args:
+        num_classes:   Number of output classes.
+        fft_bins:      Number of frequency bins after adaptive pooling.
+        time_channels: Output channel count for each time-branch conv block.
+                       Length determines the number of pooling layers.
+                       Example: (16, 32, 64) → 3 blocks, 3× downsampling.
+        time_kernels:  Kernel size for each block. Must match len(time_channels).
+                       Single int broadcasts to all blocks.
+        pool_stride:   Stride of each MaxPool1d layer (applied after every block).
+        freq_hidden:   Output size of the FFT linear projection.
+        head_hidden:   Hidden size of the classification head.
+        dropout:       Dropout probability in the head.
+    """
+
+    def __init__(
+        self,
+        num_classes: int = 4,
+        fft_bins: int = 256,
+        time_channels: Sequence[int] = (16, 32, 64),
+        time_kernels: int | Sequence[int] = (7, 5, 5),
+        pool_stride: int = 2,
+        freq_hidden: int = 128,
+        head_hidden: int = 128,
+        dropout: float = 0.3,
+    ):
         super().__init__()
         self.fft_bins = int(fft_bins)
+        self.pool_stride = int(pool_stride)
+        self.num_blocks = len(time_channels)
 
-        self.time_backbone = nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=7, padding=3),
-            nn.ReLU(),
-            nn.MaxPool1d(2),
-            nn.Conv1d(16, 32, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.MaxPool1d(2),
-            nn.Conv1d(32, 64, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.MaxPool1d(2),
-        )
+        # Broadcast single kernel size to all blocks
+        if isinstance(time_kernels, int):
+            time_kernels = [time_kernels] * self.num_blocks
 
-        self.freq_backbone = nn.Sequential(
-            nn.Conv1d(1, 16, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(16, 32, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool1d(8),
-            nn.Flatten(),
-        )
+        if len(time_kernels) != self.num_blocks:
+            raise ValueError(
+                f"time_kernels length ({len(time_kernels)}) must match "
+                f"time_channels length ({self.num_blocks})"
+            )
+
+        # Build time backbone dynamically
+        layers: list[nn.Module] = []
+        in_ch = 1
+        for out_ch, k in zip(time_channels, time_kernels):
+            layers += [
+                nn.Conv1d(in_ch, out_ch, kernel_size=k, padding=k // 2),
+                nn.BatchNorm1d(out_ch),
+                nn.ReLU(),
+                nn.MaxPool1d(pool_stride),
+            ]
+            in_ch = out_ch
+        self.time_backbone = nn.Sequential(*layers)
+        self._time_out_channels = int(time_channels[-1])
+
+        self.freq_proj = nn.Linear(fft_bins, freq_hidden)
 
         self.head = nn.Sequential(
-            nn.Linear(64 + (32 * 8), 128),
+            nn.Linear(self._time_out_channels + freq_hidden, head_hidden),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(128, num_classes),
+            nn.Dropout(dropout),
+            nn.Linear(head_hidden, num_classes),
         )
 
-    def _encode_frequency(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
-        spectra = []
-        for signal, length in zip(x, lengths.tolist()):
-            valid = signal[:, :length]
-            spectrum = torch.fft.rfft(valid, dim=-1).abs()
-            spectrum = torch.log1p(spectrum)
-            spectrum = F.adaptive_avg_pool1d(spectrum, self.fft_bins)
-            spectra.append(spectrum)
-
-        freq = torch.stack(spectra, dim=0)
-        return self.freq_backbone(freq)
+    def _encode_frequency(self, x: torch.Tensor) -> torch.Tensor:
+        spectrum = torch.fft.rfft(x, dim=-1).abs()                    # (B, 1, L//2+1)
+        spectrum = torch.log1p(spectrum)
+        spectrum = F.adaptive_avg_pool1d(spectrum, self.fft_bins)     # (B, 1, fft_bins)
+        spectrum = spectrum.squeeze(1)                                  # (B, fft_bins)
+        return F.relu(self.freq_proj(spectrum))                        # (B, freq_hidden)
 
     def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         time_features = self.time_backbone(x)
-        pooled_lengths = torch.clamp(lengths // 8, min=1)
+        pool_factor = self.pool_stride ** self.num_blocks
+        pooled_lengths = torch.clamp(lengths // pool_factor, min=1)
         time_vec = masked_global_avg_pool_1d(time_features, pooled_lengths)
 
-        freq_vec = self._encode_frequency(x, lengths)
+        freq_vec = self._encode_frequency(x)
 
         fused = torch.cat([time_vec, freq_vec], dim=1)
         return self.head(fused)

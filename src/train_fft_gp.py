@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import random
 import time
 from collections import Counter
@@ -97,9 +98,8 @@ def stratified_split_indices(labels: List[int], val_frac: float, seed: int) -> T
 
 
 def confusion_matrix_from_preds(y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int) -> torch.Tensor:
-    cm = torch.zeros((num_classes, num_classes), dtype=torch.long)
-    for true_label, pred_label in zip(y_true.tolist(), y_pred.tolist()):
-        cm[int(true_label), int(pred_label)] += 1
+    flat = y_true * num_classes + y_pred
+    cm = torch.bincount(flat, minlength=num_classes * num_classes).reshape(num_classes, num_classes)
     return cm
 
 
@@ -146,12 +146,13 @@ def run_one_epoch_train(
     criterion: nn.Module,
     device: torch.device,
     amp_enabled: bool,
+    scaler: torch.amp.GradScaler,
+    grad_clip: float,
 ) -> Tuple[float, float]:
     model.train()
     loss_sum = 0.0
     acc_sum = 0.0
     batches = 0
-    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
 
     for x, y, lengths in loader:
         x = x.to(device, non_blocking=True)
@@ -164,6 +165,9 @@ def run_one_epoch_train(
             loss = criterion(logits, y)
 
         scaler.scale(loss).backward()
+        if grad_clip > 0.0:
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         scaler.step(optimizer)
         scaler.update()
 
@@ -212,9 +216,22 @@ def run_one_epoch_val(
     return loss_sum / max(batches, 1), acc_sum / max(batches, 1), macro_f1, recalls, cm
 
 
+def _load_config(parser: argparse.ArgumentParser) -> None:
+    """If --config is on the command line, load the JSON and set it as new defaults.
+    CLI flags passed alongside --config will still override the JSON values."""
+    pre, _ = parser.parse_known_args()
+    if getattr(pre, "config", None):
+        with open(pre.config) as f:
+            overrides = json.load(f)
+        parser.set_defaults(**overrides)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", type=str, required=True, help="Folder with training/ and REFERENCE.csv")
+    parser = argparse.ArgumentParser(
+        description="Train ECGFFTGlobalPoolNet. Pass --config to load defaults from JSON."
+    )
+    parser.add_argument("--config", type=str, default=None, help="Path to a JSON config file.")
+    parser.add_argument("--data-dir", type=str, required=False, default=None, help="Folder with training/ and REFERENCE.csv")
     parser.add_argument(
         "--target-len",
         type=int,
@@ -226,7 +243,6 @@ def main() -> None:
     parser.add_argument("--val-frac", type=float, default=0.2)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--fft-bins", type=int, default=256)
     parser.add_argument(
         "--balance",
         choices=("none", "weighted_loss", "weighted_sampler"),
@@ -237,9 +253,33 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--grad-clip", type=float, default=1.0, help="Max gradient norm (0 disables clipping).")
     parser.add_argument("--patience", type=int, default=7, help="Early stopping patience on macro-F1.")
     parser.add_argument("--checkpoint-path", type=str, default="checkpoints/train_fft_gp_best.pt")
+    # --- architecture ---
+    parser.add_argument(
+        "--time-channels", type=int, nargs="+", default=[16, 32, 64],
+        help="Output channels per time-branch conv block. "
+             "Length = number of blocks = number of pooling layers. "
+             "Example: --time-channels 32 64 128",
+    )
+    parser.add_argument(
+        "--time-kernels", type=int, nargs="+", default=[7, 5, 5],
+        help="Kernel size per time-branch block. "
+             "Provide one value (broadcast) or one per block. "
+             "Example: --time-kernels 7 5 5",
+    )
+    parser.add_argument("--pool-stride", type=int, default=2, help="MaxPool1d stride after each time block.")
+    parser.add_argument("--fft-bins", type=int, default=256, help="FFT spectrum bins after adaptive pooling.")
+    parser.add_argument("--freq-hidden", type=int, default=128, help="FFT linear projection output size.")
+    parser.add_argument("--head-hidden", type=int, default=128, help="Classification head hidden size.")
+    parser.add_argument("--dropout", type=float, default=0.3, help="Head dropout probability.")
+
+    _load_config(parser)
     args = parser.parse_args()
+
+    if args.data_dir is None:
+        parser.error("--data-dir is required (either via CLI or in --config)")
 
     set_seed(args.seed)
     device = pick_device(force_cpu=bool(args.cpu))
@@ -303,9 +343,28 @@ def main() -> None:
         persistent_workers=int(args.num_workers) > 0,
     )
 
-    model = ECGFFTGlobalPoolNet(num_classes=num_classes, fft_bins=int(args.fft_bins)).to(device)
+    time_kernels = (
+        args.time_kernels
+        if len(args.time_kernels) > 1
+        else args.time_kernels[0]
+    )
+    model = ECGFFTGlobalPoolNet(
+        num_classes=num_classes,
+        fft_bins=int(args.fft_bins),
+        time_channels=args.time_channels,
+        time_kernels=time_kernels,
+        pool_stride=int(args.pool_stride),
+        freq_hidden=int(args.freq_hidden),
+        head_hidden=int(args.head_hidden),
+        dropout=float(args.dropout),
+    ).to(device)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"[model] total_params={total_params} time_channels={args.time_channels} "
+          f"time_kernels={args.time_kernels} pool_stride={args.pool_stride} "
+          f"fft_bins={args.fft_bins} freq_hidden={args.freq_hidden} "
+          f"head_hidden={args.head_hidden} dropout={args.dropout}")
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(args.lr),
         weight_decay=float(args.weight_decay),
@@ -318,6 +377,7 @@ def main() -> None:
         min_lr=1e-6,
     )
     amp_enabled = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
     checkpoint_path = Path(args.checkpoint_path).expanduser().resolve()
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     best_macro_f1 = float("-inf")
@@ -334,6 +394,8 @@ def main() -> None:
             criterion,
             device,
             amp_enabled=amp_enabled,
+            scaler=scaler,
+            grad_clip=float(args.grad_clip),
         )
         train_time_s = time.perf_counter() - train_start
 

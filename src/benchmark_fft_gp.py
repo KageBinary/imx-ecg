@@ -113,7 +113,7 @@ def main() -> None:
     amp_enabled = bool(args.amp) and device.type == "cuda"
     print(f"[device] {device}")
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     fft_bins = int(checkpoint.get("args", {}).get("fft_bins", 256))
     model = ECGFFTGlobalPoolNet(num_classes=4, fft_bins=fft_bins).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])

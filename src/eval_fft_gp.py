@@ -101,7 +101,7 @@ def main() -> None:
     device = pick_device(force_cpu=bool(args.cpu))
     print(f"[device] {device}")
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     fft_bins = int(checkpoint.get("args", {}).get("fft_bins", 256))
 
     preprocess = PreprocessConfig(
