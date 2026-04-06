@@ -24,6 +24,51 @@ SRC_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SRC_DIR))
 
 
+class SingleInputWrapper(torch.nn.Module):
+    """Wraps models that expect (x, lengths) so they only take x.
+
+    At export time the input is always padded/truncated to a fixed length,
+    so every sample uses the full signal — no masking needed. We replace
+    the masked global average pooling with a plain global average pool
+    to avoid int/float type mismatches in the ONNX graph.
+    """
+
+    def __init__(self, model: torch.nn.Module, input_length: int):
+        super().__init__()
+        self.model = model
+        self.input_length = input_length
+        self._patch_masked_pooling()
+
+    def _patch_masked_pooling(self) -> None:
+        """Replace masked_global_avg_pool_1d with plain mean since all samples are full-length."""
+        import types
+
+        original_forward = self.model.forward
+
+        def patched_forward(model_self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+            time_features = model_self.time_backbone(x)
+            # Plain global average pool — no masking needed for fixed-length input
+            time_vec = time_features.mean(dim=-1)
+
+            freq_vec = model_self._encode_frequency(x)
+
+            fused = torch.cat([time_vec, freq_vec], dim=1)
+            return model_self.head(fused)
+
+        self.model.forward = types.MethodType(patched_forward, self.model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        lengths = torch.full((x.shape[0],), self.input_length, dtype=torch.long, device=x.device)
+        return self.model(x, lengths)
+
+
+def _needs_lengths(model: torch.nn.Module) -> bool:
+    """Check if a model's forward() requires a 'lengths' parameter."""
+    import inspect
+    params = list(inspect.signature(model.forward).parameters.keys())
+    return "lengths" in params
+
+
 def load_model(model_class_name: str, module_name: str, checkpoint_path: Path, num_classes: int) -> torch.nn.Module:
     """Dynamically load any model class from any module in src/."""
     mod = importlib.import_module(module_name)
@@ -53,24 +98,40 @@ def export_onnx(
     opset_version: int = 17,
 ) -> None:
     """Export a PyTorch model to ONNX."""
+    # Wrap models that need a lengths argument (e.g. ECGFFTGlobalPoolNet)
+    if _needs_lengths(model):
+        print("[export_onnx] model requires 'lengths' — wrapping for single-input export")
+        model = SingleInputWrapper(model, input_length)
+
     dummy_input = torch.randn(1, 1, input_length)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    torch.onnx.export(
-        model,
-        dummy_input,
-        str(output_path),
-        export_params=True,
-        opset_version=opset_version,
-        input_names=["ecg_signal"],
-        output_names=["class_logits"],
-        dynamic_axes={
-            "ecg_signal": {0: "batch_size"},
-            "class_logits": {0: "batch_size"},
-        },
-        dynamo=False,
-    )
+    try:
+        # Try the legacy TorchScript exporter first (works for most models)
+        torch.onnx.export(
+            model,
+            dummy_input,
+            str(output_path),
+            export_params=True,
+            opset_version=opset_version,
+            input_names=["ecg_signal"],
+            output_names=["class_logits"],
+            dynamic_axes={
+                "ecg_signal": {0: "batch_size"},
+                "class_logits": {0: "batch_size"},
+            },
+            dynamo=False,
+        )
+    except torch.onnx.errors.UnsupportedOperatorError:
+        # Fall back to the dynamo exporter for ops like fft_rfft
+        print("[export_onnx] TorchScript exporter failed, falling back to dynamo exporter")
+        export_output = torch.onnx.export(
+            model,
+            dummy_input,
+            dynamo=True,
+        )
+        export_output.save(str(output_path))
 
     # Validate the exported model
     onnx_model = onnx.load(str(output_path))

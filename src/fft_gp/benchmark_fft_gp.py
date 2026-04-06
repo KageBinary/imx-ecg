@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import random
+import sys
 import time
 from pathlib import Path
 from typing import List, Tuple
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 import torch
 
-from models_fft_gp import ECGFFTGlobalPoolNet
-from train_fft_gp import pick_device
+from fft_gp.models_fft_gp import ECGFFTGlobalPoolNet
+from fft_gp.train_fft_gp import pick_device
 
 
 def set_seed(seed: int) -> None:

@@ -1,11 +1,16 @@
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
 from dataset import ECGDataset
-from model import ECGCNN
+from ecgcnn.model import ECGCNN
 from config import BASE_DIR, BATCH_SIZE
 
 

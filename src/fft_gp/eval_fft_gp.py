@@ -5,16 +5,19 @@ Evaluate and benchmark a saved FFT + global-pooling ECG checkpoint.
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 from typing import List, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 from torch.utils.data import DataLoader, Subset
 
 from dataset_physionet2017 import PhysioNet2017Dataset, PreprocessConfig
-from models_fft_gp import ECGFFTGlobalPoolNet
-from train_fft_gp import (
+from fft_gp.models_fft_gp import ECGFFTGlobalPoolNet
+from fft_gp.train_fft_gp import (
     compute_macro_f1_and_recall,
     confusion_matrix_from_preds,
     format_confusion_matrix,

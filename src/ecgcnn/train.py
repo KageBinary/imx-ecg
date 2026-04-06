@@ -1,4 +1,9 @@
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,7 +12,7 @@ from sklearn.utils.class_weight import compute_class_weight
 
 from config import BATCH_SIZE, EPOCHS, LEARNING_RATE, RANDOM_SEED, PROCESSED_DIR, BASE_DIR
 from dataset import ECGDataset
-from model import ECGCNN
+from ecgcnn.model import ECGCNN
 
 
 def set_seed(seed):

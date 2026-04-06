@@ -24,9 +24,12 @@ import copy
 import json
 import math
 import random
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch
@@ -34,8 +37,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 
 from dataset_physionet2017 import PhysioNet2017Dataset, PreprocessConfig
-from models_fft_gp import ECGFFTGlobalPoolNet
-from train_fft_gp import (
+from fft_gp.models_fft_gp import ECGFFTGlobalPoolNet
+from fft_gp.train_fft_gp import (
     compute_class_weights,
     make_weighted_sampler,
     pad_collate,

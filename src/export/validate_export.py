@@ -23,6 +23,11 @@ SRC_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SRC_DIR))
 
 
+def _needs_lengths(model: torch.nn.Module) -> bool:
+    import inspect
+    return "lengths" in list(inspect.signature(model.forward).parameters.keys())
+
+
 def run_pytorch(model_class: str, module_name: str, checkpoint_path: Path,
                 num_classes: int, test_input: np.ndarray) -> np.ndarray:
     mod = importlib.import_module(module_name)
@@ -39,7 +44,12 @@ def run_pytorch(model_class: str, module_name: str, checkpoint_path: Path,
     model.eval()
 
     with torch.no_grad():
-        output = model(torch.from_numpy(test_input)).numpy()
+        x = torch.from_numpy(test_input)
+        if _needs_lengths(model):
+            lengths = torch.full((x.shape[0],), x.shape[-1])
+            output = model(x, lengths).numpy()
+        else:
+            output = model(x).numpy()
     return output
 
 

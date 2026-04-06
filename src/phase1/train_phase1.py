@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import random
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import List, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch
@@ -19,7 +22,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 
 from dataset_physionet2017 import PhysioNet2017Dataset, PreprocessConfig
-from models_1dcnn import SimpleECG1DCNN
+from phase1.models_1dcnn import SimpleECG1DCNN
 
 
 def set_seed(seed: int) -> None:

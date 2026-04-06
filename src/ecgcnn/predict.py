@@ -1,7 +1,12 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import torch
 import numpy as np
 import os
-from model import ECGCNN
+from ecgcnn.model import ECGCNN
 from config import BASE_DIR
 
 MODEL_PATH = os.path.join(BASE_DIR, "outputs", "models", "best_model.pth")

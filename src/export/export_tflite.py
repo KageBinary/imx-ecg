@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 
 
 def export_via_onnx_tf(onnx_path: Path, tflite_path: Path, quantize: bool) -> None:
@@ -37,6 +38,24 @@ def export_via_onnx_tf(onnx_path: Path, tflite_path: Path, quantize: bool) -> No
 
     tflite_path.parent.mkdir(parents=True, exist_ok=True)
     tflite_path.write_bytes(tflite_model)
+
+
+class _SingleInputWrapper(torch.nn.Module):
+    """Wraps models that expect (x, lengths) so they only take x."""
+
+    def __init__(self, model, input_length: int):
+        super().__init__()
+        self.model = model
+        self.input_length = input_length
+
+    def forward(self, x):
+        lengths = torch.full((x.shape[0],), self.input_length, device=x.device)
+        return self.model(x, lengths)
+
+
+def _needs_lengths(model) -> bool:
+    import inspect
+    return "lengths" in list(inspect.signature(model.forward).parameters.keys())
 
 
 def export_via_ai_edge_torch(checkpoint_path: str, model_class: str, module_name: str,
@@ -63,6 +82,11 @@ def export_via_ai_edge_torch(checkpoint_path: str, model_class: str, module_name
         state_dict = state_dict["model_state_dict"]
     model.load_state_dict(state_dict)
     model.eval()
+
+    # Wrap models that need a lengths argument (e.g. ECGFFTGlobalPoolNet)
+    if _needs_lengths(model):
+        print("[export_tflite] model requires 'lengths' — wrapping for single-input export")
+        model = _SingleInputWrapper(model, input_length)
 
     dummy_input = (torch.randn(1, 1, input_length),)
     edge_model = ai_edge_torch.convert(model, dummy_input)

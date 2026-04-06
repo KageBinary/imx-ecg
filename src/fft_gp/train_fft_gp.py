@@ -12,10 +12,13 @@ import argparse
 import copy
 import json
 import random
+import sys
 import time
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch
@@ -24,7 +27,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 from dataset_physionet2017 import PhysioNet2017Dataset, PreprocessConfig
-from models_fft_gp import ECGFFTGlobalPoolNet
+from fft_gp.models_fft_gp import ECGFFTGlobalPoolNet
 
 
 def set_seed(seed: int) -> None:
