@@ -53,7 +53,9 @@ def accuracy(logits: torch.Tensor, y: torch.Tensor) -> float:
 
 def compute_class_weights(labels: List[int], num_classes: int) -> torch.Tensor:
     counts = torch.bincount(torch.tensor(labels, dtype=torch.long), minlength=num_classes).float()
-    weights = counts.sum() / counts.clamp_min(1.0)
+    # Square-root of inverse frequency: softer than full inverse-frequency, which
+    # over-suppresses the majority class (Normal) and causes 0.0 recall.
+    weights = (counts.sum() / counts.clamp_min(1.0)).sqrt()
     weights = weights / weights.mean().clamp_min(1e-6)
     return weights
 
@@ -139,6 +141,30 @@ def pad_collate(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.T
     return x_batch, y_batch, lengths
 
 
+def augment_batch(
+    x: torch.Tensor,
+    lengths: torch.Tensor,
+    amp_jitter: float = 0.15,
+    noise_std: float = 0.05,
+) -> torch.Tensor:
+    """In-place-safe augmentation: random amplitude scaling + Gaussian noise.
+
+    Only modifies the valid (unpadded) timesteps for each sample so that the
+    padding zeros introduced by pad_collate remain zero.
+    """
+    B = x.shape[0]
+    # Per-sample amplitude scale in [1-amp_jitter, 1+amp_jitter]
+    scales = 1.0 + (torch.rand(B, 1, 1, device=x.device) * 2 - 1) * amp_jitter
+    x = x * scales
+
+    # Additive Gaussian noise only on valid timesteps
+    noise = torch.randn_like(x) * noise_std
+    steps = torch.arange(x.shape[-1], device=x.device).unsqueeze(0)
+    mask = (steps < lengths.unsqueeze(1)).unsqueeze(1).to(dtype=x.dtype)
+    x = x + noise * mask
+    return x
+
+
 def run_one_epoch_train(
     model: nn.Module,
     loader: DataLoader,
@@ -148,6 +174,7 @@ def run_one_epoch_train(
     amp_enabled: bool,
     scaler: torch.amp.GradScaler,
     grad_clip: float,
+    augment: bool = False,
 ) -> Tuple[float, float]:
     model.train()
     loss_sum = 0.0
@@ -158,6 +185,9 @@ def run_one_epoch_train(
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
         lengths = lengths.to(device, non_blocking=True)
+
+        if augment:
+            x = augment_batch(x, lengths)
 
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, enabled=amp_enabled):
@@ -274,6 +304,9 @@ def main() -> None:
     parser.add_argument("--freq-hidden", type=int, default=128, help="FFT linear projection output size.")
     parser.add_argument("--head-hidden", type=int, default=128, help="Classification head hidden size.")
     parser.add_argument("--dropout", type=float, default=0.3, help="Head dropout probability.")
+    parser.add_argument("--backbone-dropout", type=float, default=0.0, help="Dropout1d probability after each time-branch conv block ReLU.")
+    parser.add_argument("--label-smoothing", type=float, default=0.0, help="Label smoothing epsilon for CrossEntropyLoss.")
+    parser.add_argument("--augment", action="store_true", default=False, help="Apply amplitude jitter and Gaussian noise augmentation during training.")
 
     _load_config(parser)
     args = parser.parse_args()
@@ -357,13 +390,15 @@ def main() -> None:
         freq_hidden=int(args.freq_hidden),
         head_hidden=int(args.head_hidden),
         dropout=float(args.dropout),
+        backbone_dropout=float(args.backbone_dropout),
     ).to(device)
     total_params = sum(p.numel() for p in model.parameters())
     print(f"[model] total_params={total_params} time_channels={args.time_channels} "
           f"time_kernels={args.time_kernels} pool_stride={args.pool_stride} "
           f"fft_bins={args.fft_bins} freq_hidden={args.freq_hidden} "
-          f"head_hidden={args.head_hidden} dropout={args.dropout}")
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+          f"head_hidden={args.head_hidden} dropout={args.dropout} "
+          f"backbone_dropout={args.backbone_dropout}")
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=float(args.label_smoothing))
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(args.lr),
@@ -396,6 +431,7 @@ def main() -> None:
             amp_enabled=amp_enabled,
             scaler=scaler,
             grad_clip=float(args.grad_clip),
+            augment=bool(args.augment),
         )
         train_time_s = time.perf_counter() - train_start
 

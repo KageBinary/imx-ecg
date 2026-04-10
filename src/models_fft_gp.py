@@ -53,6 +53,7 @@ class ECGFFTGlobalPoolNet(nn.Module):
         freq_hidden: int = 128,
         head_hidden: int = 128,
         dropout: float = 0.3,
+        backbone_dropout: float = 0.0,
     ):
         super().__init__()
         self.fft_bins = int(fft_bins)
@@ -73,12 +74,15 @@ class ECGFFTGlobalPoolNet(nn.Module):
         layers: list[nn.Module] = []
         in_ch = 1
         for out_ch, k in zip(time_channels, time_kernels):
-            layers += [
+            block: list[nn.Module] = [
                 nn.Conv1d(in_ch, out_ch, kernel_size=k, padding=k // 2),
                 nn.BatchNorm1d(out_ch),
                 nn.ReLU(),
-                nn.MaxPool1d(pool_stride),
             ]
+            if backbone_dropout > 0.0:
+                block.append(nn.Dropout1d(backbone_dropout))
+            block.append(nn.MaxPool1d(pool_stride))
+            layers += block
             in_ch = out_ch
         self.time_backbone = nn.Sequential(*layers)
         self._time_out_channels = int(time_channels[-1])
@@ -92,12 +96,19 @@ class ECGFFTGlobalPoolNet(nn.Module):
             nn.Linear(head_hidden, num_classes),
         )
 
-    def _encode_frequency(self, x: torch.Tensor) -> torch.Tensor:
-        spectrum = torch.fft.rfft(x, dim=-1).abs()                    # (B, 1, L//2+1)
-        spectrum = torch.log1p(spectrum)
-        spectrum = F.adaptive_avg_pool1d(spectrum, self.fft_bins)     # (B, 1, fft_bins)
-        spectrum = spectrum.squeeze(1)                                  # (B, fft_bins)
-        return F.relu(self.freq_proj(spectrum))                        # (B, freq_hidden)
+    def _encode_frequency(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        # Compute FFT per-sample on the unpadded signal to avoid spectral artifacts
+        # from zero-padding. adaptive_avg_pool1d normalises variable-length spectra.
+        spectra: list[torch.Tensor] = []
+        for i in range(x.shape[0]):
+            L = int(lengths[i].item())
+            sig = x[i, :, :L]                                          # (1, L)
+            spec = torch.fft.rfft(sig, dim=-1).abs()                   # (1, L//2+1)
+            spec = torch.log1p(spec)
+            spec = F.adaptive_avg_pool1d(spec, self.fft_bins)          # (1, fft_bins)
+            spectra.append(spec.squeeze(0))                             # (fft_bins,)
+        spectrum = torch.stack(spectra, dim=0)                          # (B, fft_bins)
+        return F.relu(self.freq_proj(spectrum))                         # (B, freq_hidden)
 
     def forward(self, x: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         time_features = self.time_backbone(x)
@@ -105,7 +116,7 @@ class ECGFFTGlobalPoolNet(nn.Module):
         pooled_lengths = torch.clamp(lengths // pool_factor, min=1)
         time_vec = masked_global_avg_pool_1d(time_features, pooled_lengths)
 
-        freq_vec = self._encode_frequency(x)
+        freq_vec = self._encode_frequency(x, lengths)
 
         fused = torch.cat([time_vec, freq_vec], dim=1)
         return self.head(fused)
