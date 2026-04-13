@@ -3,7 +3,6 @@ import numpy as np
 
 interpreter = tflite.Interpreter(
     model_path='/root/imx-ecg/artifacts/ecg_deploy_int8.tflite',
-    experimental_delegates=[tflite.load_delegate('/usr/lib/libvx_delegate.so')]
 )
 interpreter.allocate_tensors()
 
