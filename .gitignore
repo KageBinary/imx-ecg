@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Training artifacts
+*.pt
+*.pth
+logs/
+runs/
+
+
+data2017/

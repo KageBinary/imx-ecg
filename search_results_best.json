@@ -1,0 +1,21 @@
+{
+  "data_dir": "data2017",
+  "time_channels": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "time_kernels": [
+    7
+  ],
+  "pool_stride": 2,
+  "fft_bins": 128,
+  "freq_hidden": 256,
+  "head_hidden": 64,
+  "dropout": 0.1,
+  "lr": 0.00210149,
+  "weight_decay": 0.00208548,
+  "batch_size": 16,
+  "balance": "weighted_loss"
+}
