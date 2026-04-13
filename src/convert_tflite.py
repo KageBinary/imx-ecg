@@ -184,8 +184,8 @@ def _convert_with_onnx2tf(
         print(f"[convert] INT8 PTQ with {calib_samples} calibration samples")
         converter.representative_dataset = _build_representative_dataset(data_dir, calib_samples)
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-        converter.inference_input_type = tf.float32
-        converter.inference_output_type = tf.float32
+        converter.inference_input_type = tf.int8
+        converter.inference_output_type = tf.int8
     else:
         print("[convert] FP32 TFLite")
 
