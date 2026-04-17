@@ -77,6 +77,19 @@ if str(_SRC) not in sys.path:
 from deploy_config import CANONICAL_LEN, INPUT_CHANNELS
 
 
+def _build_representative_dataset_npy(npy_path: str):
+    """Build a representative dataset generator from a pre-saved .npy file."""
+    import numpy as np
+
+    arr = np.load(npy_path).astype(np.float32)  # [n, 3000, 1] NHWC
+
+    def gen():
+        for i in range(len(arr)):
+            yield [arr[i : i + 1]]  # [1, 3000, 1]
+
+    return gen
+
+
 def _build_representative_dataset(data_dir: str, n_samples: int):
     """
     Generator that yields calibration inputs for TFLite INT8 PTQ.
@@ -133,6 +146,7 @@ def _convert_with_onnx2tf(
     int8: bool,
     data_dir: str | None,
     calib_samples: int,
+    calib_npy: str | None = None,
 ) -> str:
     """Convert ONNX → TFLite using onnx2tf.
 
@@ -179,10 +193,14 @@ def _convert_with_onnx2tf(
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
     if int8:
-        if data_dir is None:
-            raise ValueError("--data-dir is required for INT8 calibration")
-        print(f"[convert] INT8 PTQ with {calib_samples} calibration samples")
-        converter.representative_dataset = _build_representative_dataset(data_dir, calib_samples)
+        if calib_npy is not None:
+            print(f"[convert] INT8 PTQ from prebuilt calibration data: {calib_npy}")
+            converter.representative_dataset = _build_representative_dataset_npy(calib_npy)
+        elif data_dir is not None:
+            print(f"[convert] INT8 PTQ with {calib_samples} calibration samples")
+            converter.representative_dataset = _build_representative_dataset(data_dir, calib_samples)
+        else:
+            raise ValueError("--data-dir or --calib-npy is required for INT8 calibration")
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         converter.inference_input_type = tf.int8
         converter.inference_output_type = tf.int8
@@ -254,6 +272,10 @@ def main() -> None:
     parser.add_argument(
         "--data-dir", type=str, default=None,
         help="Dataset root for INT8 calibration representative dataset.",
+    )
+    parser.add_argument(
+        "--calib-npy", type=str, default=None,
+        help="Pre-saved calibration numpy file [n, 3000, 1] NHWC. Skips dataset loading.",
     )
     parser.add_argument(
         "--calib-samples", type=int, default=200,
@@ -337,6 +359,7 @@ def main() -> None:
                 int8=args.int8,
                 data_dir=args.data_dir,
                 calib_samples=int(args.calib_samples),
+                calib_npy=args.calib_npy,
             )
         else:
             _convert_with_onnxtf(

@@ -26,10 +26,10 @@ Design decisions
   ReLU6 clips activations to [0, 6], bounding the INT8 quantization range
   more tightly than unbounded ReLU.
 
-* GlobalAveragePool via AdaptiveAvgPool1d(1)
-  With a fixed input length of 3000 and 3 MaxPool(2) blocks the temporal
-  dimension is 375 after the backbone. AdaptiveAvgPool1d(1) exports as
-  ONNX ``GlobalAveragePool`` → TFLite ``MEAN``, both fully supported.
+* GlobalAveragePool via x.mean(dim=-1, keepdim=True)
+  Exports as ONNX ``ReduceMean`` → TFLite ``MEAN`` with no NCHW bridge
+  TRANSPOSE injected by onnx2tf. TRANSPOSE (from AdaptiveAvgPool1d) is
+  not supported by the VX delegate and blocks NPU delegation.
 
 * Single input: model(x) — no lengths tensor, no dynamic masking.
   Variable-length handling is the job of the fixed-length preprocessing
@@ -117,9 +117,6 @@ class ECGDeployNet(nn.Module):
 
         self.backbone = nn.Sequential(*strided_blocks)
 
-        # GlobalAveragePool: exports as ONNX GlobalAveragePool → TFLite MEAN
-        self.gap = nn.AdaptiveAvgPool1d(1)
-
         self.head = nn.Sequential(
             nn.Flatten(),              # [B, c3, 1] → [B, c3]
             nn.Linear(c3, c3),
@@ -137,7 +134,7 @@ class ECGDeployNet(nn.Module):
             logits: float32 tensor of shape [B, num_classes].
         """
         x = self.backbone(x)
-        x = self.gap(x)
+        x = x.mean(dim=-1, keepdim=True)
         return self.head(x)
 
 
