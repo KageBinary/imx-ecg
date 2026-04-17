@@ -26,10 +26,11 @@ Design decisions
   ReLU6 clips activations to [0, 6], bounding the INT8 quantization range
   more tightly than unbounded ReLU.
 
-* GlobalAveragePool via x.mean(dim=-1, keepdim=True)
-  Exports as ONNX ``ReduceMean`` → TFLite ``MEAN`` with no NCHW bridge
-  TRANSPOSE injected by onnx2tf. TRANSPOSE (from AdaptiveAvgPool1d) is
-  not supported by the VX delegate and blocks NPU delegation.
+* GlobalAveragePool via AvgPool1d(kernel_size=375)
+  Exports as ONNX ``AveragePool`` → TFLite ``AVERAGE_POOL_2D``, a native
+  spatial op that onnx2tf maps directly without injecting a NCHW bridge
+  TRANSPOSE. GlobalAveragePool/ReduceMean both cause onnx2tf to emit a
+  TRANSPOSE that the VX delegate does not support.
 
 * Single input: model(x) — no lengths tensor, no dynamic masking.
   Variable-length handling is the job of the fixed-length preprocessing
@@ -50,6 +51,9 @@ import torch
 import torch.nn as nn
 
 from deploy_config import CANONICAL_LEN, INPUT_CHANNELS, NUM_CLASSES
+
+# Temporal dim after 3×MaxPool(2) on fixed input of CANONICAL_LEN=3000
+_GAP_KERNEL: int = CANONICAL_LEN // 8  # = 375
 
 
 class ECGDeployNet(nn.Module):
@@ -117,6 +121,11 @@ class ECGDeployNet(nn.Module):
 
         self.backbone = nn.Sequential(*strided_blocks)
 
+        # AvgPool1d exports to ONNX AveragePool → TFLite AVERAGE_POOL_2D (VX-delegatable).
+        # GlobalAveragePool/ReduceMean both cause onnx2tf to inject a TRANSPOSE, which
+        # the VX delegate does not support and which fragments the graph.
+        self.gap = nn.AvgPool1d(kernel_size=_GAP_KERNEL)
+
         self.head = nn.Sequential(
             nn.Flatten(),              # [B, c3, 1] → [B, c3]
             nn.Linear(c3, c3),
@@ -134,7 +143,7 @@ class ECGDeployNet(nn.Module):
             logits: float32 tensor of shape [B, num_classes].
         """
         x = self.backbone(x)
-        x = x.mean(dim=-1, keepdim=True)
+        x = self.gap(x)
         return self.head(x)
 
 
