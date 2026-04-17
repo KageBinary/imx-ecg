@@ -177,6 +177,16 @@ def section_op_audit(tflite, int8_path, vx_path):
         print("  vx_delegate not available — skipping delegation audit")
         return {}
 
+    # Baseline: op list WITHOUT delegate (true original ops)
+    interp_cpu = tflite.Interpreter(model_path=int8_path)
+    interp_cpu.allocate_tensors()
+    try:
+        baseline_ops = interp_cpu._get_ops_details()
+    except AttributeError:
+        print("  _get_ops_details() not available on this runtime build")
+        return {}
+    n_original = len(baseline_ops)
+
     interp = tflite.Interpreter(
         model_path=int8_path,
         experimental_delegates=[tflite.load_delegate(vx_path)],
@@ -189,38 +199,72 @@ def section_op_audit(tflite, int8_path, vx_path):
         print("  _get_ops_details() not available on this runtime build")
         return {}
 
-    cpu_ops = []
-    npu_ops = []
-    unknown_ops = []
+    delegate_nodes = [(i, op) for i, op in enumerate(ops) if op.get("op_name") == "DELEGATE"]
+    n_delegate_nodes = len(delegate_nodes)
 
-    # vx_delegate wraps all delegated ops under a single DELEGATE op node.
-    # Any op NOT wrapped is running on CPU.
-    for i, op in enumerate(ops):
-        name = op.get("op_name", "UNKNOWN")
-        if name == "DELEGATE":
-            npu_ops.append((i, name))
-        elif "CUSTOM" in name:
-            unknown_ops.append((i, name))
-        else:
-            cpu_ops.append((i, name))
+    # Some TFLite runtimes add DELEGATE nodes without removing the original ops
+    # ("ghost op" mode). Detect this by checking if total grew vs baseline.
+    ghost_mode = len(ops) > n_original
+    if ghost_mode:
+        # In ghost mode: ops_with_delegate = original_ops + delegate_nodes
+        # The delegate_nodes tell us how many NPU subgraphs exist.
+        # Ops truly on CPU = ops that appear in non-DELEGATE positions AND
+        # are NOT covered by any DELEGATE subgraph. We approximate by looking
+        # at which ops appear BEFORE the first DELEGATE and AFTER the last.
+        first_delegate_idx = delegate_nodes[0][0] if delegate_nodes else len(ops)
+        last_delegate_idx  = delegate_nodes[-1][0] if delegate_nodes else -1
 
-    print(f"\n  Total ops in graph : {len(ops)}")
-    print(f"  NPU-delegated      : {len(npu_ops)}  (wrapped as DELEGATE nodes)")
-    print(f"  CPU fallback       : {len(cpu_ops)}")
-    print(f"  Unknown/custom     : {len(unknown_ops)}")
+        true_cpu_ops = []
+        for i, op in enumerate(ops):
+            name = op.get("op_name", "UNKNOWN")
+            if name == "DELEGATE":
+                continue
+            # Ops outside the delegate span are truly on CPU
+            if i < first_delegate_idx or i > last_delegate_idx:
+                true_cpu_ops.append((i, name))
 
-    if cpu_ops:
-        print("\n  CPU-fallback ops (these block full NPU delegation):")
-        for idx, name in cpu_ops:
+        # Ops inside the delegate span are ghost duplicates — actually on NPU
+        n_delegated_ops = n_original - len(true_cpu_ops)
+    else:
+        # Normal mode: delegated ops were replaced by DELEGATE nodes
+        true_cpu_ops = [(i, op.get("op_name", "UNKNOWN")) for i, op in enumerate(ops)
+                        if op.get("op_name") != "DELEGATE"]
+        n_delegated_ops = n_original - len(true_cpu_ops)
+
+    print(f"\n  Original ops (no delegate) : {n_original}")
+    print(f"  NPU-delegated ops          : {n_delegated_ops}")
+    print(f"  CPU fallback ops           : {len(true_cpu_ops)}")
+    if ghost_mode:
+        print(f"  (Note: runtime uses ghost-op mode — delegated ops still visible in op list)")
+
+    if true_cpu_ops:
+        print("\n  CPU-fallback ops:")
+        for idx, name in true_cpu_ops:
             print(f"    Op {idx:3d}: {name}")
+    else:
+        print("\n  All ops delegated to NPU.")
 
-    # Count graph fragments = number of CPU↔NPU boundary crossings
+    # Execution sequence from delegate positions
     sequence = []
     for op in ops:
         name = op.get("op_name", "UNKNOWN")
+        if ghost_mode:
+            # In ghost mode skip the ghost non-DELEGATE ops between delegates
+            pass
         kind = "NPU" if name == "DELEGATE" else "CPU"
         if not sequence or sequence[-1] != kind:
             sequence.append(kind)
+
+    # In ghost mode, sequence is built differently
+    if ghost_mode:
+        sequence = []
+        first_d = delegate_nodes[0][0] if delegate_nodes else None
+        if first_d is None:
+            sequence = ["CPU"]
+        elif first_d > 0:
+            sequence = ["CPU", "NPU"]
+        else:
+            sequence = ["NPU"]
 
     n_fragments = len(sequence)
     n_handoffs = n_fragments - 1
@@ -229,12 +273,12 @@ def section_op_audit(tflite, int8_path, vx_path):
     print(f"  CPU↔NPU handoffs   : {n_handoffs}  (each = memcpy + sync overhead)")
 
     return {
-        "total_ops": len(ops),
-        "npu_ops": len(npu_ops),
-        "cpu_ops": len(cpu_ops),
+        "total_ops": n_original,
+        "npu_ops": n_delegated_ops,
+        "cpu_ops": len(true_cpu_ops),
         "fragments": n_fragments,
         "handoffs": n_handoffs,
-        "cpu_op_names": [name for _, name in cpu_ops],
+        "cpu_op_names": [name for _, name in true_cpu_ops],
     }
 
 
@@ -594,14 +638,21 @@ def section_summary(audit, breakdown, latency):
         print(f"    CPU copy   = {cpu_copy:.3f} ms")
         print(f"    NPU copy   = {npu_copy:.3f} ms")
 
+    cpu_ops_remaining = audit.get("cpu_ops", 0) if audit else 0
+    handoffs = audit.get("handoffs", 0) if audit else 0
     print(f"\n  RECOMMENDATIONS:")
-    print(f"    1. Fix TRANSPOSE op: pass keep_nchw_or_ndhwc=True to onnx2tf.convert()")
-    print(f"       This suppresses the layout-transposition op so all ops delegate to NPU.")
-    print(f"    2. Re-run delegate.py after fix to confirm 0 CPU-fallback ops.")
-    print(f"    3. If NPU still slower after fix: model is compute-starved (too few FLOPs).")
-    print(f"       Consider batching N signals per invoke, or accepting CPU is optimal here.")
-    print(f"    4. Try neutron_delegate (/usr/lib/libneutron_delegate.so) if BSP >= 6.6.x.")
-    print(f"       Neutron has lower launch overhead than vx_delegate for small models.")
+    if npu_cpu_ratio and npu_cpu_ratio < 1.0 and cpu_ops_remaining <= 1:
+        print(f"    NPU delegation looks good ({npu_cpu_ratio:.2f}x CPU time).")
+        if handoffs > 0:
+            print(f"    {handoffs} handoff(s) remain — accept or try fusing the CPU boundary op.")
+        print(f"    Consider batching multiple signals per invoke to amortize launch overhead.")
+    else:
+        if cpu_ops_remaining > 1:
+            print(f"    {cpu_ops_remaining} ops on CPU — check quantization and op support for VX delegate.")
+        if npu_cpu_ratio and npu_cpu_ratio >= 1.0:
+            print(f"    NPU is slower than CPU — model may be too small to amortize NPU launch cost.")
+            print(f"    Try batching N signals per invoke to increase utilization.")
+        print(f"    Try neutron_delegate (/usr/lib/libneutron_delegate.so) if BSP >= 6.6.x.")
 
     _sep()
 
