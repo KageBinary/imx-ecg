@@ -26,6 +26,9 @@ artifacts/_calib_data.npy
 artifacts/_tf_savedmodel/
 artifacts/*.onnx
 
+# Allow small test subset
+!artifacts/test_subset.npz
+
 # Checkpoints
 checkpoints/
 

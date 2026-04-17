@@ -13,9 +13,10 @@ import time
 
 import numpy as np
 
-MODEL      = "/root/imx-ecg/artifacts/ecg_deploy_int8.tflite"
+MODEL       = "/root/imx-ecg/artifacts/ecg_deploy_int8.tflite"
 VX_DELEGATE = "/usr/lib/libvx_delegate.so"
-CLASSES    = ["Normal", "AF", "Other", "Noisy"]
+SUBSET_NPZ  = "/root/imx-ecg/artifacts/test_subset.npz"
+CLASSES     = ["Normal", "AF", "Other", "Noisy"]
 
 
 def load_interpreter(use_npu=True):
@@ -111,19 +112,42 @@ def f1_scores(y_true, y_pred, n_classes):
     return scores
 
 
-def test_accuracy(data_dir):
+def test_accuracy(data_dir=None):
     print("=" * 60)
     print("3. ACCURACY  (test set)")
     print("=" * 60)
     import os
-    x_path = os.path.join(data_dir, "X_test.npy")
-    y_path = os.path.join(data_dir, "y_test.npy")
-    if not os.path.exists(x_path) or not os.path.exists(y_path):
-        print(f"  SKIP — test data not found at {data_dir}")
-        return
 
-    X = np.load(x_path)  # [N, 1, 3000]  float32, z-scored
-    y = np.load(y_path)  # [N]            int labels
+    # Prefer full test set if available, fall back to bundled subset
+    if data_dir:
+        x_path = os.path.join(data_dir, "X_test.npy")
+        y_path = os.path.join(data_dir, "y_test.npy")
+        if os.path.exists(x_path) and os.path.exists(y_path):
+            raw = np.load(x_path)          # [N, L]  flat, z-scored
+            y   = np.load(y_path).astype(int)
+            CANONICAL = 3000
+            X = np.zeros((len(raw), CANONICAL), dtype=np.float32)
+            for i, sig in enumerate(raw):
+                L = sig.shape[-1]
+                if L >= CANONICAL:
+                    s = (L - CANONICAL) // 2
+                    x = sig[s:s + CANONICAL]
+                else:
+                    x = np.pad(sig, (0, CANONICAL - L))
+                std = x.std()
+                X[i] = ((x - x.mean()) / std) if std > 1e-6 else x
+        else:
+            print(f"  data not found at {data_dir}, falling back to bundled subset")
+            data_dir = None
+
+    if not data_dir:
+        if not os.path.exists(SUBSET_NPZ):
+            print(f"  SKIP — no test data found ({SUBSET_NPZ} missing)")
+            return
+        data = np.load(SUBSET_NPZ)
+        X, y = data["X"], data["y"].astype(int)
+        print(f"  Using bundled subset ({len(X)} samples)")
+
     N = len(X)
     print(f"  Samples : {N}  |  Classes : {np.bincount(y.astype(int)).tolist()}")
 
@@ -132,9 +156,8 @@ def test_accuracy(data_dir):
 
     preds = []
     for i in range(N):
-        x = X[i : i + 1]  # [1, 1, 3000]
-        # onnx2tf converts to NHWC [1, 3000, 1]
-        x_nhwc = x.transpose(0, 2, 1).astype(np.float32)
+        # X[i] is [3000] — reshape to NHWC [1, 3000, 1] as onnx2tf expects
+        x_nhwc = X[i].reshape(1, 3000, 1).astype(np.float32)
         x_q = quantize_input(x_nhwc, interp)
         logits = run_inference(interp, x_q)
         preds.append(int(logits.argmax()))
@@ -167,7 +190,4 @@ if __name__ == "__main__":
 
     test_sanity()
     test_latency()
-    if args.test_data:
-        test_accuracy(args.test_data)
-    else:
-        print("Tip: pass --test-data /root/imx-ecg/data/processed to run accuracy test")
+    test_accuracy(args.test_data)
