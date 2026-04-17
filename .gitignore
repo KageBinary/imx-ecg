@@ -17,3 +17,19 @@ runs/
 
 
 data2017/
+
+# Dataset
+data/
+
+# Calibration and intermediate artifacts
+artifacts/_calib_data.npy
+artifacts/_tf_savedmodel/
+artifacts/*.onnx
+
+# Checkpoints
+checkpoints/
+
+# Local docs
+AUDIT.md
+DEPLOYMENT.md
+.codex
