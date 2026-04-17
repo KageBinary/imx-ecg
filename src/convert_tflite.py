@@ -204,6 +204,9 @@ def _convert_with_onnx2tf(
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         converter.inference_input_type = tf.int8
         converter.inference_output_type = tf.int8
+        # VX/TIM-VX delegate requires per-tensor (symmetric) quantization for weights.
+        # Per-channel is TFLite's default for Conv but is rejected by many NPU delegates.
+        converter._experimental_disable_per_channel = True
     else:
         print("[convert] FP32 TFLite")
 
