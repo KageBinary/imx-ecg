@@ -26,8 +26,15 @@ artifacts/_calib_data.npy
 artifacts/_tf_savedmodel/
 artifacts/*.onnx
 
-# Allow small test subset
+# Allow board deployment artifacts
 !artifacts/test_subset.npz
+!artifacts/ecg_deploy_int8.tflite
+
+# Raw Arduino recordings
+raw_*.npy
+
+# Generated figures
+figures/
 
 # Checkpoints
 checkpoints/

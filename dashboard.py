@@ -236,10 +236,12 @@ class ECGDashboard:
         inference_fn: Callable,
         classify_every_n: int = 150,
         title: str = "",
+        sample_rate: int = SAMPLE_RATE,
     ):
         self.inference_fn     = inference_fn
         self.classify_every_n = classify_every_n
         self.title            = title
+        self._sample_rate     = sample_rate
 
         self._queue: queue.Queue = queue.Queue(maxsize=30_000)
         self._buffer    = np.zeros(WINDOW_SAMPLES, dtype=np.float32)
@@ -251,6 +253,7 @@ class ECGDashboard:
         self._name  = CLASS_NAMES[0]
         self._probs = np.full(4, 0.25, dtype=np.float32)
         self._bpm   = 0
+        self._bpm_ema = 0.0   # exponential moving average for smooth display
         self._history: deque = deque(maxlen=_HISTORY_LEN)
         self._total   = 0
         self._correct = 0
@@ -619,13 +622,9 @@ class ECGDashboard:
             ln.set_ydata(disp)
 
         if std > 1e-6:
-            pk, _ = find_peaks(disp, height=1.2, distance=int(SAMPLE_RATE * 0.35))
+            pk, _ = find_peaks(disp, height=1.2, distance=int(self._sample_rate * 0.35))
             if len(pk):
                 self._peak_dots.set_data(self._t[pk], disp[pk])
-                # Beep once per peak. A peak is "new" when it appears near
-                # the right edge (i.e. arrived in this frame's batch of samples).
-                # We track the rightmost peak index and beep only when a new
-                # one appears to the right of the previous rightmost.
                 rightmost = int(pk[-1])
                 prev_right = int(self._last_peaks[-1]) if len(self._last_peaks) else -1
                 if rightmost > prev_right:
@@ -638,9 +637,13 @@ class ECGDashboard:
             self._peak_dots.set_data([], [])
             self._last_peaks = np.array([], dtype=int)
 
-        # BPM (every ~0.5 s)
+        # BPM (every ~0.5 s) — EMA smoothed to reduce display jitter
         if self._frame % 15 == 0 and std > 1e-6:
-            self._bpm = _estimate_bpm(disp)
+            raw_bpm = _estimate_bpm(disp, sr=self._sample_rate)
+            if raw_bpm:
+                alpha = 0.25 if self._bpm_ema == 0.0 else 0.15
+                self._bpm_ema = alpha * raw_bpm + (1 - alpha) * self._bpm_ema
+                self._bpm = int(round(self._bpm_ema))
             self._bpm_val.set_text(
                 str(self._bpm) if self._bpm else '———'
             )
