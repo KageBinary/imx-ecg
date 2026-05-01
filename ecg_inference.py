@@ -82,3 +82,69 @@ class ECGInference:
             probs = torch.softmax(logits, dim=-1).squeeze().numpy()
         pred = int(probs.argmax())
         return pred, CLASS_NAMES[pred], probs
+
+
+class ECGInferenceTFLite:
+    """TFLite inference wrapper — uses NPU delegate when available."""
+
+    _DELEGATE = "/usr/lib/libvx_delegate.so"
+
+    def __init__(self, model_path: str, use_npu: bool = True):
+        import os
+        try:
+            import tflite_runtime.interpreter as tflite
+        except ImportError:
+            from tensorflow import lite as tflite  # type: ignore
+
+        delegates = []
+        if use_npu and os.path.exists(self._DELEGATE):
+            delegates = [tflite.load_delegate(self._DELEGATE)]
+            print(f"NPU delegate loaded.")
+        else:
+            print("TFLite running on CPU (no NPU delegate found).")
+
+        self.interp = tflite.Interpreter(
+            model_path=str(model_path),
+            experimental_delegates=delegates,
+        )
+        self.interp.allocate_tensors()
+        self._inp = self.interp.get_input_details()[0]
+        self._out = self.interp.get_output_details()[0]
+        self.canonical_len = CANONICAL_LEN
+        print(f"Loaded {Path(model_path).name}  (TFLite)")
+
+    def preprocess(self, signal: np.ndarray) -> np.ndarray:
+        x = np.nan_to_num(signal.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        n = len(x)
+        if n > self.canonical_len:
+            start = (n - self.canonical_len) // 2
+            x = x[start: start + self.canonical_len]
+        elif n < self.canonical_len:
+            pad = self.canonical_len - n
+            pl = pad // 2
+            x = np.pad(x, (pl, pad - pl), mode="constant", constant_values=0.0)
+        x = (x - x.mean()) / (x.std() + 1e-6)
+        x = x.reshape(1, 1, self.canonical_len)
+        if self._inp["dtype"] == np.int8:
+            scale, zp = self._inp["quantization"]
+            x = np.clip(np.round(x / scale + zp), -128, 127).astype(np.int8)
+        else:
+            x = x.astype(self._inp["dtype"])
+        return x
+
+    def classify(self, signal: np.ndarray):
+        x = self.preprocess(signal)
+        self.interp.set_tensor(self._inp["index"], x)
+        self.interp.invoke()
+        raw = self.interp.get_tensor(self._out["index"])
+        if self._out["dtype"] == np.int8:
+            scale, zp = self._out["quantization"]
+            logits = (raw.astype(np.float32) - zp) * scale
+        else:
+            logits = raw.astype(np.float32)
+        logits = logits.squeeze()
+        # softmax — model may output logits or already-normalised scores
+        e = np.exp(logits - logits.max())
+        probs = e / e.sum()
+        pred = int(probs.argmax())
+        return pred, CLASS_NAMES[pred], probs

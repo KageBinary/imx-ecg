@@ -352,7 +352,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--fs",             type=float, default=250.0,
                    help="Arduino sample rate in Hz")
     p.add_argument("--checkpoint",     default="checkpoints/deploy_best.pt",
-                   help="Model checkpoint for classification")
+                   help="PyTorch checkpoint for classification")
+    p.add_argument("--tflite",         default=None, metavar="PATH",
+                   help="TFLite model path (uses NPU delegate on i.MX board); "
+                        "e.g. artifacts/ecg_deploy_int8.tflite")
     p.add_argument("--save",           action="store_true",
                    help="Save raw samples on exit (auto-named raw_<timestamp>.npy)")
     p.add_argument("--save-to",        default=None, metavar="PATH",
@@ -426,11 +429,21 @@ def main(argv: Optional[list[str]] = None) -> None:
         print("Classification disabled — waveform display only.")
         inference_fn = _dummy_classify
         title = f"Arduino live  |  {port}  |  {args.fs:.0f} Hz  |  raw display"
+    elif args.tflite:
+        tflite_path = Path(args.tflite)
+        if not tflite_path.exists():
+            print(f"TFLite model not found: {tflite_path}")
+            sys.exit(1)
+        print(f"Loading TFLite model from {tflite_path} …")
+        from ecg_inference import ECGInferenceTFLite
+        inference = ECGInferenceTFLite(str(tflite_path))
+        inference_fn = inference.classify
+        title = f"ECG live  |  {port}  |  {args.fs:.0f} Hz  |  TFLite"
     else:
         ck_path = Path(args.checkpoint)
         if not ck_path.exists():
             print(f"Checkpoint not found: {ck_path}")
-            print("Run with --no-classify to display without inference.")
+            print("Run with --no-classify to display without inference, or --tflite <path> for TFLite.")
             sys.exit(1)
 
         print(f"Loading model from {ck_path} …")
