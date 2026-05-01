@@ -64,6 +64,7 @@ from scipy.signal import butter, lfilter, lfilter_zi, resample_poly
 
 from dashboard import ECGDashboard
 from dashboard_lite import ECGDashboardLite
+from terminal_dashboard import TerminalDashboard
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -374,6 +375,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                    help="Lightweight dashboard: 2.5s window, 10fps, no audio (good for the board)")
     p.add_argument("--classify-every", type=int, default=125,
                    help="Reclassify every N new samples")
+    p.add_argument("--terminal",        action="store_true",
+                   help="Text-mode display — no GUI needed, works over plain SSH")
     return p.parse_args(argv)
 
 
@@ -462,7 +465,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         title += f"  |  saving → {Path(_save_path).name}"
 
     # ── Build dashboard ───────────────────────────────────────────────────────
-    DashClass = ECGDashboardLite if args.lite else ECGDashboard
+    if args.terminal:
+        DashClass = TerminalDashboard
+    elif args.lite:
+        DashClass = ECGDashboardLite
+    else:
+        DashClass = ECGDashboard
     dashboard = DashClass(
         inference_fn=inference_fn,
         classify_every_n=args.classify_every,
