@@ -45,6 +45,8 @@ class TerminalDashboard:
         self._pred  = -1
         self._probs = np.zeros(4, dtype=np.float32)
         self._lock  = threading.Lock()
+        self._classify_count = 0
+        self._last_error: str = ''
 
     # ── public interface (matches ECGDashboard / ECGDashboardLite) ──────────────
 
@@ -94,12 +96,16 @@ class TerminalDashboard:
             self._classify()
 
     def _classify(self) -> None:
-        import traceback
+        import traceback, io
+        self._classify_count += 1
         try:
             pred, name, probs = self._inference_fn(self._buf.copy())
         except Exception:
-            traceback.print_exc()
+            buf = io.StringIO()
+            traceback.print_exc(file=buf)
+            self._last_error = buf.getvalue().strip().splitlines()[-1]
             return
+        self._last_error = ''
         with self._lock:
             self._pred  = pred
             self._name  = name
@@ -153,6 +159,7 @@ class TerminalDashboard:
             '',
             *prob_lines,
             '',
-            f'  {_DIM}rx: {self._total_rx}   buf: {self._since_cls}/{self.classify_every_n}   signal std: {std:.2f}{_RESET}',
+            f'  {_DIM}rx: {self._total_rx}   buf: {self._since_cls}/{self.classify_every_n}   cls_calls: {self._classify_count}   std: {std:.2f}{_RESET}',
+            f'  \033[91m{self._last_error}{_RESET}' if self._last_error else '',
         ]
         print('\n'.join(lines), end='', flush=True)
