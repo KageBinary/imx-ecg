@@ -234,7 +234,7 @@ class ECGDashboardLite:
             )
 
         if self._frame % 10 == 0:
-            print(f"\rFPS: {self._fps:.1f}  queue: {self._queue.qsize()}  buf: {self._since_cls}/{self.classify_every_n}  disp_std={std:.2f}  min={self._disp_buf.min():.0f}  max={self._disp_buf.max():.0f}", end="", flush=True)
+            print(f"[DASH] frame={self._frame}  fps={self._fps:.1f}  queue={self._queue.qsize()}  buf={self._since_cls}/{self.classify_every_n}  std={std:.2f}  min={self._disp_buf.min():.0f}  max={self._disp_buf.max():.0f}", flush=True)
 
         return [self._ecg_line, self._txt_cls, self._txt_conf, self._txt_bpm]
 

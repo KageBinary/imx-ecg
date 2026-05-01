@@ -604,13 +604,13 @@ class ECGDashboard:
         if new_lbl is not None:
             self._true_lbl = new_lbl
 
+        if self._frame % 30 == 0:
+            print(f"[DASH] frame={self._frame}  queue={self._queue.qsize()}  new={len(new)}  since_cls={self._since_cls}/{self.classify_every_n}", flush=True)
         if new:
             n = len(new)
             self._buffer = np.roll(self._buffer, -n)
             self._buffer[-n:] = new
             self._since_cls  += n
-            if self._frame % 15 == 0:
-                print(f"\r[BUFFER] {self._since_cls}/{self.classify_every_n}  queue={self._queue.qsize()}  nonzero={np.count_nonzero(self._buffer)}", end="", flush=True)
             if self._since_cls >= self.classify_every_n:
                 self._since_cls = 0
                 self._classify()
