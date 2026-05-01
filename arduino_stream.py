@@ -67,13 +67,14 @@ from dashboard_lite import ECGDashboardLite
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# VIDs for common Arduino / compatible boards
+# VIDs for common microcontroller boards
 _ARDUINO_VIDS = {
     0x2341,  # Arduino SA (Uno, Mega, Leonardo …)
     0x2A03,  # Arduino.org
     0x1A86,  # CH340 / CH341 (cheap clones)
     0x10C4,  # CP2102 / CP2104 (Silicon Labs)
     0x0403,  # FTDI FT232
+    0x2E8A,  # Raspberry Pi (Pico / Pico W, MicroPython)
 }
 
 # Raw samples saved across the session; flushed on exit
@@ -127,7 +128,8 @@ def _wsl2_find_arduino_port() -> Optional[str]:
                 continue
             all_ports.append(dev_id)
             if any(k in desc.lower() for k in ("arduino", "ch340", "ch341",
-                                                "cp210", "ftdi", "usb serial")):
+                                                "cp210", "ftdi", "usb serial",
+                                                "pico", "micropython", "raspberry")):
                 arduino_ports.append(dev_id)
 
         chosen = arduino_ports[0] if arduino_ports else (all_ports[0] if all_ports else None)
@@ -180,7 +182,7 @@ def find_arduino_port() -> Optional[str]:
     for p in serial.tools.list_ports.comports():
         vid = p.vid or 0
         name = f"{p.description or ''} {p.manufacturer or ''}".lower()
-        if vid in _ARDUINO_VIDS or "arduino" in name or "ch340" in name:
+        if vid in _ARDUINO_VIDS or any(k in name for k in ("arduino", "ch340", "pico", "micropython", "raspberry")):
             return p.device
         if p.device.startswith("/dev/ttyACM") or p.device.startswith("/dev/ttyUSB"):
             acm_usb.append(p.device)

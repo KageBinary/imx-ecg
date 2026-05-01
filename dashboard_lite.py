@@ -22,6 +22,7 @@ Public API (same as ECGDashboard):
 from __future__ import annotations
 
 import queue
+import time
 from typing import Callable, Optional
 
 import matplotlib.animation as animation
@@ -67,8 +68,10 @@ class ECGDashboardLite:
         self._queue: queue.Queue = queue.Queue(maxsize=30_000)
         self._disp_buf  = np.zeros(DISPLAY_SAMPLES,  dtype=np.float32)
         self._cls_buf   = np.zeros(CLASSIFY_SAMPLES, dtype=np.float32)
-        self._since_cls = 0
-        self._frame     = 0
+        self._since_cls  = 0
+        self._frame      = 0
+        self._last_frame = time.monotonic()
+        self._fps        = 0.0
 
         self._pred    = 0
         self._name    = CLASS_NAMES[0]
@@ -93,7 +96,7 @@ class ECGDashboardLite:
     def run(self, interval_ms: int = 100) -> None:
         self._ani = animation.FuncAnimation(
             self.fig, self._update,
-            interval=interval_ms, blit=False, cache_frame_data=False,
+            interval=interval_ms, blit=True, cache_frame_data=False,
         )
         plt.show()
 
@@ -180,7 +183,13 @@ class ECGDashboardLite:
 
     # ── Animation ─────────────────────────────────────────────────────────────
 
-    def _update(self, _f: int) -> None:
+    def _update(self, _f: int):
+        now = time.monotonic()
+        elapsed = now - self._last_frame
+        self._last_frame = now
+        if elapsed > 0:
+            self._fps = 0.1 * (1.0 / elapsed) + 0.9 * self._fps
+
         self._frame += 1
 
         # Drain queue
@@ -191,16 +200,18 @@ class ECGDashboardLite:
         except queue.Empty:
             pass
 
-        if new:
-            n = len(new)
-            self._disp_buf = np.roll(self._disp_buf, -n)
-            self._disp_buf[-n:] = new
-            self._cls_buf = np.roll(self._cls_buf, -n)
-            self._cls_buf[-n:] = new
-            self._since_cls += n
-            if self._since_cls >= self.classify_every_n:
-                self._since_cls = 0
-                self._classify()
+        if not new:
+            return [self._ecg_line, self._txt_cls, self._txt_conf, self._txt_bpm]
+
+        n = len(new)
+        self._disp_buf = np.roll(self._disp_buf, -n)
+        self._disp_buf[-n:] = new
+        self._cls_buf = np.roll(self._cls_buf, -n)
+        self._cls_buf[-n:] = new
+        self._since_cls += n
+        if self._since_cls >= self.classify_every_n:
+            self._since_cls = 0
+            self._classify()
 
         # Z-score display buffer
         std = self._disp_buf.std()
@@ -221,6 +232,11 @@ class ECGDashboardLite:
             self._txt_bpm.set_text(
                 f'BPM: {self._bpm}' if self._bpm else 'BPM: —'
             )
+
+        if self._frame % 10 == 0:
+            print(f"\rFPS: {self._fps:.1f}  queue: {self._queue.qsize()}", end="", flush=True)
+
+        return [self._ecg_line, self._txt_cls, self._txt_conf, self._txt_bpm]
 
     def _classify(self) -> None:
         pred, name, probs = self.inference_fn(self._cls_buf.copy())
