@@ -205,12 +205,20 @@ class ECGDashboardLite:
         if not new:
             return [self._ecg_line, self._txt_cls, self._txt_conf, self._txt_bpm]
 
-        n = len(new)
-        self._disp_buf = np.roll(self._disp_buf, -n)
-        self._disp_buf[-n:] = new
-        self._cls_buf = np.roll(self._cls_buf, -n)
-        self._cls_buf[-n:] = new
-        self._since_cls += n
+        new = np.asarray(new, dtype=np.float32)
+        if len(new) >= len(self._disp_buf):
+            self._disp_buf[:] = new[-len(self._disp_buf):]
+        else:
+            n = len(new)
+            self._disp_buf = np.roll(self._disp_buf, -n)
+            self._disp_buf[-n:] = new
+        if len(new) >= len(self._cls_buf):
+            self._cls_buf[:] = new[-len(self._cls_buf):]
+        else:
+            n = len(new)
+            self._cls_buf = np.roll(self._cls_buf, -n)
+            self._cls_buf[-n:] = new
+        self._since_cls += len(new)
         if self._since_cls >= self.classify_every_n:
             self._since_cls = 0
             self._classify()
