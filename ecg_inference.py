@@ -5,7 +5,6 @@ Loads the model from a checkpoint and runs single-sample classification.
 import sys
 import importlib.util
 import numpy as np
-import torch
 from pathlib import Path
 
 _PYC_DIR = Path(__file__).parent / "src" / "__pycache__"
@@ -26,6 +25,9 @@ def _load_pyc(name: str, path: Path):
 
 class ECGInference:
     def __init__(self, checkpoint_path: str):
+        import torch
+        self._torch = torch
+
         # deploy_config must be registered before models_deploy imports it
         dc_pyc = next(_PYC_DIR.glob("deploy_config.cpython-*.pyc"))
         _load_pyc("deploy_config", dc_pyc)
@@ -49,7 +51,7 @@ class ECGInference:
         f1 = ck.get("best_macro_f1", "?")
         print(f"Loaded {Path(checkpoint_path).name}  epoch={epoch}  macro-F1={f1:.4f}")
 
-    def preprocess(self, signal: np.ndarray) -> torch.Tensor:
+    def preprocess(self, signal: np.ndarray):
         """
         Replicates the deployment preprocessing contract exactly:
           1. Cast + sanitise
@@ -67,7 +69,7 @@ class ECGInference:
             pl = pad // 2
             x = np.pad(x, (pl, pad - pl), mode="constant", constant_values=0.0)
         x = (x - x.mean()) / (x.std() + 1e-6)
-        return torch.from_numpy(x).unsqueeze(0).unsqueeze(0)
+        return self._torch.from_numpy(x).unsqueeze(0).unsqueeze(0)
 
     def classify(self, signal: np.ndarray):
         """
@@ -77,9 +79,9 @@ class ECGInference:
             (pred_idx: int, class_name: str, probs: np.ndarray[4])
         """
         x = self.preprocess(signal)
-        with torch.no_grad():
+        with self._torch.no_grad():
             logits = self.model(x)
-            probs = torch.softmax(logits, dim=-1).squeeze().numpy()
+            probs = self._torch.softmax(logits, dim=-1).squeeze().numpy()
         pred = int(probs.argmax())
         return pred, CLASS_NAMES[pred], probs
 
