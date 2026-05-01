@@ -17,6 +17,8 @@ import threading
 from collections import deque
 from typing import Callable, Optional
 
+import matplotlib
+matplotlib.rcParams['toolbar'] = 'None'
 import matplotlib.animation as animation
 import matplotlib.gridspec as gridspec
 import matplotlib.patheffects as pe
