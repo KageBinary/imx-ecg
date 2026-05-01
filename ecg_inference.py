@@ -59,7 +59,8 @@ class ECGInference:
           3. Z-score over the fixed-length window
         Returns float32 tensor [1, 1, CANONICAL_LEN].
         """
-        x = np.nan_to_num(signal.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        signal = np.atleast_1d(np.asarray(signal, dtype=np.float32)).ravel()
+        x = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
         n = len(x)
         if n > self.canonical_len:
             start = (n - self.canonical_len) // 2
@@ -116,7 +117,8 @@ class ECGInferenceTFLite:
         print(f"Loaded {Path(model_path).name}  (TFLite)")
 
     def preprocess(self, signal: np.ndarray) -> np.ndarray:
-        x = np.nan_to_num(signal.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        signal = np.atleast_1d(np.asarray(signal, dtype=np.float32)).ravel()
+        x = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
         n = len(x)
         if n > self.canonical_len:
             start = (n - self.canonical_len) // 2
