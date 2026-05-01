@@ -103,7 +103,8 @@ class TerminalDashboard:
         except Exception:
             buf = io.StringIO()
             traceback.print_exc(file=buf)
-            self._last_error = buf.getvalue().strip().splitlines()[-1]
+            lines = buf.getvalue().strip().splitlines()
+            self._last_error = ' | '.join(lines[-3:])
             return
         self._last_error = ''
         with self._lock:

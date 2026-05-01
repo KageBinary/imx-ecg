@@ -128,7 +128,7 @@ class ECGInferenceTFLite:
             pl = pad // 2
             x = np.pad(x, (pl, pad - pl), mode="constant", constant_values=0.0)
         x = (x - x.mean()) / (x.std() + 1e-6)
-        x = x.reshape(1, 1, self.canonical_len)
+        x = x.reshape(1, self.canonical_len, 1)
         if self._inp["dtype"] == np.int8:
             scale, zp = self._inp["quantization"]
             x = np.clip(np.round(x / scale + zp), -128, 127).astype(np.int8)
