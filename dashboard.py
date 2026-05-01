@@ -609,6 +609,8 @@ class ECGDashboard:
             self._buffer = np.roll(self._buffer, -n)
             self._buffer[-n:] = new
             self._since_cls  += n
+            if self._frame % 15 == 0:
+                print(f"\r[BUFFER] {self._since_cls}/{self.classify_every_n}  queue={self._queue.qsize()}  nonzero={np.count_nonzero(self._buffer)}", end="", flush=True)
             if self._since_cls >= self.classify_every_n:
                 self._since_cls = 0
                 self._classify()
@@ -660,6 +662,7 @@ class ECGDashboard:
             self._cls_stripe.set_alpha(1.0)
 
     def _classify(self) -> None:
+        print(f"\n[CLASSIFY] firing — buf_shape={self._buffer.shape}  nonzero={np.count_nonzero(self._buffer)}", flush=True)
         pred, name, probs = self.inference_fn(self._buffer.copy())
         self._pred  = pred
         self._name  = name

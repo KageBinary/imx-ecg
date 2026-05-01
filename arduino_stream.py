@@ -314,6 +314,8 @@ def _read_thread(
 
         # Always save raw ADC value before any processing
         _raw_samples.append(float(raw))
+        if len(_raw_samples) % 25 == 0:
+            print(f"[DATA] samples_rx={len(_raw_samples)}  raw={raw}", flush=True)
 
         sample = float(raw)
 
