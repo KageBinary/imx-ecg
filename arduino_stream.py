@@ -310,7 +310,7 @@ def _read_thread(
         except ValueError:
             continue  # skip non-numeric lines (e.g. boot messages)
 
-        if not (0 <= raw <= 1023):
+        if not (0 <= raw <= 4095):
             continue
 
         # Always save raw ADC value before any processing
