@@ -79,17 +79,27 @@ class TerminalDashboard:
             pass
         if not new:
             return
-        n = len(new)
-        self._total_rx += n
-        self._buf = np.roll(self._buf, -n)
-        self._buf[-n:] = np.array(new, dtype=np.float32)
-        self._since_cls += n
+        arr = np.array(new, dtype=np.float32)
+        self._total_rx += len(arr)
+        blen = len(self._buf)
+        if len(arr) >= blen:
+            # more samples than buffer — just keep the most recent blen
+            self._buf[:] = arr[-blen:]
+        else:
+            self._buf = np.roll(self._buf, -len(arr))
+            self._buf[-len(arr):] = arr
+        self._since_cls += len(arr)
         if self._since_cls >= self.classify_every_n:
             self._since_cls = 0
             self._classify()
 
     def _classify(self) -> None:
-        pred, name, probs = self._inference_fn(self._buf.copy())
+        import traceback
+        try:
+            pred, name, probs = self._inference_fn(self._buf.copy())
+        except Exception:
+            traceback.print_exc()
+            return
         with self._lock:
             self._pred  = pred
             self._name  = name
