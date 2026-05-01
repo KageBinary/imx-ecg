@@ -604,8 +604,6 @@ class ECGDashboard:
         if new_lbl is not None:
             self._true_lbl = new_lbl
 
-        if self._frame % 30 == 0:
-            print(f"[DASH] frame={self._frame}  queue={self._queue.qsize()}  new={len(new)}  since_cls={self._since_cls}/{self.classify_every_n}", flush=True)
         if new:
             n = len(new)
             self._buffer = np.roll(self._buffer, -n)
@@ -662,7 +660,6 @@ class ECGDashboard:
             self._cls_stripe.set_alpha(1.0)
 
     def _classify(self) -> None:
-        print(f"\n[CLASSIFY] firing — buf_shape={self._buffer.shape}  nonzero={np.count_nonzero(self._buffer)}", flush=True)
         pred, name, probs = self.inference_fn(self._buffer.copy())
         self._pred  = pred
         self._name  = name

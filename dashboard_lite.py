@@ -234,12 +234,11 @@ class ECGDashboardLite:
             )
 
         if self._frame % 10 == 0:
-            print(f"[DASH] frame={self._frame}  fps={self._fps:.1f}  queue={self._queue.qsize()}  buf={self._since_cls}/{self.classify_every_n}  std={std:.2f}  min={self._disp_buf.min():.0f}  max={self._disp_buf.max():.0f}", flush=True)
+            print(f"\rFPS: {self._fps:.1f}  queue: {self._queue.qsize()}", end="", flush=True)
 
         return [self._ecg_line, self._txt_cls, self._txt_conf, self._txt_bpm]
 
     def _classify(self) -> None:
-        print(f"\n[CLASSIFY] firing — nonzero={np.count_nonzero(self._cls_buf)}  min={self._cls_buf.min():.0f}  max={self._cls_buf.max():.0f}  std={self._cls_buf.std():.2f}", flush=True)
         pred, name, probs = self.inference_fn(self._cls_buf.copy())
         self._pred = pred
         self._name = name
